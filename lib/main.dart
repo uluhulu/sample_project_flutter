@@ -11,3 +11,4 @@ Future<void> main() async {
   await initAppModule(BuildMode.dev);
   runApp(App());
 }
+
