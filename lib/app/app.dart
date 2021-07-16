@@ -13,7 +13,7 @@ class App extends StatelessWidget {
       child: GetMaterialApp(
         debugShowCheckedModeBanner: false,
         title: "Application",
-        initialRoute: Routes.LOG_IN,
+        initialRoute: Routes.SIGN_UP,
         getPages: AppPages.routes,
         locale: Get.deviceLocale,
       ),
