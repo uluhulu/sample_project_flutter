@@ -7,15 +7,17 @@ import 'dart:math' show max;
 import 'package:dio/adapter.dart';
 import 'package:dio/dio.dart' hide Response;
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_crashlytics/firebase_crashlytics.dart';
+// import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:gql_dio_link/gql_dio_link.dart' hide HttpLinkHeaders;
 import 'package:graphql_flutter/graphql_flutter.dart';
 import 'package:jwt_decoder/jwt_decoder.dart';
+
 // import 'package:path/path.dart';
-import 'package:pretty_dio_logger/pretty_dio_logger.dart';
+// import 'package:pretty_dio_logger/pretty_dio_logger.dart';
+import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:websocket/websocket.dart' show WebSocket;
 
 // import '../models/uploaded_file.dart';
@@ -40,18 +42,23 @@ class ApiController extends DisposableInterface {
       <String>[to.storageBaseUrl, path].join('/');
 
   GraphQLClient _client;
+
   static GraphQLClient get client => to._client;
 
   static Future<QueryResult> Function(MutationOptions) get mutate =>
       client.mutate;
+
   static Future<QueryResult> Function(QueryOptions) get query => client.query;
+
   static Stream<QueryResult> Function(SubscriptionOptions) get subscribe =>
       client.subscribe;
 
   Dio _dio;
+
   static Dio get dio => to._dio;
 
   final token = Rx<AuthToken>(StoreController.to.token);
+
   String get accessToken => token.value?.accessToken;
 
   String get userId {
@@ -69,16 +76,19 @@ class ApiController extends DisposableInterface {
   @override
   void onInit() {
     _dio = Dio(BaseOptions(baseUrl: apiBaseUrl))
-      ..interceptors.add(PrettyDioLogger(
-          requestHeader: true,
-          requestBody: true,
-          responseBody: true,
-          responseHeader: false,
-          error: true,
-          compact: true,
-          maxWidth: 90))
+      // ..interceptors.add(PrettyDioLogger(
+      //     requestHeader: true,
+      //     requestBody: true,
+      //     responseBody: true,
+      //     responseHeader: false,
+      //     error: true,
+      //     compact: true,
+      //     maxWidth: 90))
       ..interceptors.add(InterceptorsWrapper(
-        onRequest: (RequestOptions options) async {
+        onRequest: (
+          RequestOptions options,
+          RequestInterceptorHandler requestInterceptorHandler,
+        ) async {
           if (accessToken != null) {
             if (JwtDecoder.isExpired(accessToken) &&
                 options.path != _authTokenRefreshRoute) await refreshToken();
@@ -87,7 +97,7 @@ class ApiController extends DisposableInterface {
           }
           return options;
         },
-        onError: (err) {
+        onError: (err, ErrorInterceptorHandler errorInterceptorHandler) {
           if (err.error is SocketException) {
             log('connection error', name: 'ApiController', error: err.error);
           } else if (err.response != null) {
@@ -95,7 +105,7 @@ class ApiController extends DisposableInterface {
               case 401:
                 if (token != null) {
                   debugger();
-                  FirebaseCrashlytics.instance.recordError(err, null);
+                  // FirebaseCrashlytics.instance.recordError(err, null);
                 }
                 break;
 
@@ -133,13 +143,13 @@ class ApiController extends DisposableInterface {
       },
     );
 
-    WebSocket _socket;
+    WebSocketChannel _socket;
     void sendHeaders() {
       final payload = json.encode({
         'type': 'connection_init',
         'payload': {'headers': _createHeaders()},
       });
-      _socket?.add(payload);
+      _socket?.sink?.add(payload);
       log('socket send new headers:\n$payload', name: 'ApiController');
     }
 
@@ -148,13 +158,15 @@ class ApiController extends DisposableInterface {
       config: SocketClientConfig(
         autoReconnect: true,
         initialPayload: () => {'headers': _createHeaders()},
-        onConnectOrReconnect: (socket) {
+        connect: (url, protocols) {
           log('socket connented', name: 'ApiController');
-          _socket = socket;
+          var channel = WebSocketChannel.connect(url, protocols: protocols);
+          _socket = channel;
           Future.delayed(
             const Duration(seconds: 1),
             () => UserController.to.subscribe(),
           );
+          return channel;
         },
       ),
     )..connectOrReconnect();
